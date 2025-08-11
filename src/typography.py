@@ -1,11 +1,18 @@
 import os
 import requests
 from pathlib import Path
-from PIL import ImageFont
+from PIL import ImageFont, ImageDraw
 import random
+import textwrap
+from dotenv import load_dotenv
 
-# Config
-API_KEY = "AIzaSyBRQy681PpRQihZbZFOLdhFEaxJwH5qpMM"
+load_dotenv()  # Loads variables from .env into environment
+
+API_KEY = os.getenv("GOOGLE_FONTS_API_KEY")
+
+if not API_KEY:
+    raise ValueError("Google Fonts API key not found. Please set GOOGLE_FONTS_API_KEY in .env")
+
 FONT_FAMILY = "Roboto"
 FONT_VARIANT = "regular"
 FONT_DIR = Path("data/fonts")
@@ -38,21 +45,39 @@ def download_font():
     else:
         print("Font already downloaded.")
 
-def draw_text(draw, text, palette, width, height, font_size=None):
+def get_contrast_color(bg_color):
+    r, g, b = bg_color
+    luminance = (0.299*r + 0.587*g + 0.114*b)/255
+    return (0, 0, 0) if luminance > 0.5 else (255, 255, 255)
+
+def draw_wrapped_text(draw, text, palette, width, height, font_size=None, max_width_ratio=0.8, line_spacing=10):
+    """
+    Draw wrapped multiline text inside width*max_width_ratio area with good contrast
+    """
     download_font()
 
     if font_size is None:
         font_size = random.randint(80, 200)
 
     font = ImageFont.truetype(str(FONT_PATH), font_size)
+    max_text_width = width * max_width_ratio
+    text_color = get_contrast_color(palette[0])  # Choose text color contrasting first palette color
 
-    # Get bounding box of the text
-    bbox = draw.textbbox((0, 0), text, font=font)  # returns (x0, y0, x1, y1)
-    text_width = bbox[2] - bbox[0]
-    text_height = bbox[3] - bbox[1]
+    # Wrap text: estimate max chars per line by average char width
+    avg_char_width = font.getlength("a")  # Pillow >=8.0, else approximate
+    max_chars_per_line = max(10, int(max_text_width / avg_char_width))
 
-    x = random.randint(0, max(0, width - text_width))
-    y = random.randint(0, max(0, height - text_height))
+    lines = textwrap.wrap(text, width=max_chars_per_line)
+    # Calculate total height for all lines
+    line_heights = [font.getbbox(line)[3] - font.getbbox(line)[1] for line in lines]
+    total_text_height = sum(line_heights) + line_spacing * (len(lines) -1)
 
-    text_color = random.choice(palette)
-    draw.text((x, y), text, font=font, fill=text_color)
+    # Start vertically centered
+    y = (height - total_text_height) // 2
+
+    for line, line_height in zip(lines, line_heights):
+        bbox = draw.textbbox((0,0), line, font=font)
+        text_width = bbox[2] - bbox[0]
+        x = (width - text_width) // 2  # center horizontally
+        draw.text((x, y), line, font=font, fill=text_color)
+        y += line_height + line_spacing

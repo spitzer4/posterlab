@@ -1,32 +1,27 @@
 from PIL import Image, ImageDraw
 import random
-from typography import draw_text
+from typography import draw_wrapped_text
 from shapes import draw_shape_by_name, draw_random_shape
 from event_extractor import extract_event_info
 
 WIDTH, HEIGHT = 1080, 1350
 
-# Color palettes based on moods
 WARM_PALETTE = [(239, 71, 111), (255, 209, 102), (255, 255, 255)]
 COOL_PALETTE = [(20, 33, 61), (0, 48, 73), (200, 200, 200)]
 NEUTRAL_PALETTE = [(200, 200, 200), (100, 100, 100), (150, 150, 150)]
 
-# Map locations or event types to shapes/colors for fun
 LOCATION_SHAPES = {
     "park": "leaf",
     "beach": "circle",
     "hall": "rectangle",
     "stadium": "circle",
-    # Add more mappings here
 }
 
 def design_params_from_event(text):
     info = extract_event_info(text)
 
-    # Choose palette based on presence of date (just an example)
     palette = WARM_PALETTE if info["date"] else NEUTRAL_PALETTE
 
-    # Font size based on event name length
     name_len = len(info["event_name"])
     if name_len < 10:
         font_size_range = (150, 200)
@@ -35,7 +30,6 @@ def design_params_from_event(text):
     else:
         font_size_range = (40, 80)
 
-    # Shape from location or fallback random
     shape = None
     if info["location"]:
         loc = info["location"].lower()
@@ -68,13 +62,15 @@ def generate_poster(text, output_path):
     else:
         draw_random_shape(draw, palette, WIDTH, HEIGHT)
 
-    # Compose full poster text with event details
-    poster_text = params["event_name"]
+    # Combine event details into multiline string
+    lines = [params["event_name"]]
     if params["date"]:
-        poster_text += f"\n{params['date']}"
+        lines.append(params["date"])
     if params["location"]:
-        poster_text += f"\n{params['location']}"
+        lines.append(params["location"])
 
-    draw_text(draw, poster_text, palette, WIDTH, HEIGHT, font_size=font_size)
+    poster_text = "\n".join([line for line in lines if line])
+
+    draw_wrapped_text(draw, poster_text, palette, WIDTH, HEIGHT, font_size=font_size)
 
     img.save(output_path)
