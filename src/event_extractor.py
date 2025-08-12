@@ -23,7 +23,6 @@ def extract_event_info(text):
 
     # Sort spans in reverse so we can safely slice the string
     spans_to_remove = sorted(spans_to_remove, key=lambda ent: ent.start_char, reverse=True)
-    print(spans_to_remove)
 
     # Start with the original text for event name removal
     event_name_text = text
