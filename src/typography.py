@@ -45,14 +45,31 @@ def download_font():
     else:
         print("Font already downloaded.")
 
-def get_contrast_color(bg_color):
-    r, g, b = bg_color
-    luminance = (0.299*r + 0.587*g + 0.114*b)/255
-    return (0, 0, 0) if luminance > 0.5 else (255, 255, 255)
+def relative_luminance(rgb):
+    def channel_lum(c):
+        c = c / 255
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = rgb
+    return 0.2126 * channel_lum(r) + 0.7152 * channel_lum(g) + 0.0722 * channel_lum(b)
 
-def draw_wrapped_text(draw, text, palette, width, height, font_size=None, max_width_ratio=0.8, line_spacing=10):
+def contrast_ratio(c1, c2):
+    L1 = relative_luminance(c1)
+    L2 = relative_luminance(c2)
+    lighter = max(L1, L2)
+    darker = min(L1, L2)
+    return (lighter + 0.05) / (darker + 0.05)
+
+def get_accessible_text_color(bg_color, candidates=[(0,0,0), (255,255,255)]):    
+    # Try black or white text for sufficient contrast (4.5:1)
+    for color in candidates:
+        if contrast_ratio(bg_color[0], color) >= 4.5:
+            return color
+    # If neither passes, return color with highest contrast anyway
+    return max(candidates, key=lambda c: contrast_ratio(bg_color, c))
+
+def draw_wrapped_text(draw, text, bg_color, width, height, font_size=None, max_width_ratio=0.8, line_spacing=10):
     """
-    Draw wrapped multiline text inside width*max_width_ratio area with good contrast
+    Draw wrapped multiline text with accessible contrast color.
     """
     download_font()
 
@@ -61,23 +78,26 @@ def draw_wrapped_text(draw, text, palette, width, height, font_size=None, max_wi
 
     font = ImageFont.truetype(str(FONT_PATH), font_size)
     max_text_width = width * max_width_ratio
-    text_color = get_contrast_color(palette[0])  # Choose text color contrasting first palette color
 
-    # Wrap text: estimate max chars per line by average char width
-    avg_char_width = font.getlength("a")  # Pillow >=8.0, else approximate
+    # Estimate max chars per line by average char width
+    avg_char_width = font.getlength("a")  # Pillow >=8.0
     max_chars_per_line = max(10, int(max_text_width / avg_char_width))
 
     lines = textwrap.wrap(text, width=max_chars_per_line)
-    # Calculate total height for all lines
-    line_heights = [font.getbbox(line)[3] - font.getbbox(line)[1] for line in lines]
-    total_text_height = sum(line_heights) + line_spacing * (len(lines) -1)
 
-    # Start vertically centered
+    # Calculate total height
+    line_heights = [font.getbbox(line)[3] - font.getbbox(line)[1] for line in lines]
+    total_text_height = sum(line_heights) + line_spacing * (len(lines) - 1)
+
+    # Vertical start (centered)
     y = (height - total_text_height) // 2
 
+    text_color = get_accessible_text_color(bg_color)
+
     for line, line_height in zip(lines, line_heights):
-        bbox = draw.textbbox((0,0), line, font=font)
+        bbox = draw.textbbox((0, 0), line, font=font)
         text_width = bbox[2] - bbox[0]
         x = (width - text_width) // 2  # center horizontally
         draw.text((x, y), line, font=font, fill=text_color)
         y += line_height + line_spacing
+        
