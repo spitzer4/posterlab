@@ -100,6 +100,75 @@ def find_non_overlapping_position(
     y = max(margin, min(preferred_y, canvas_height - text_height - margin))
     return x, y
 
+# def draw_event_text(
+#     base_img: Image.Image,
+#     text: str,
+#     preferred_position: Tuple[int, int],
+#     font_path,
+#     size: int,
+#     color: Tuple[int, int, int],
+#     stretch_factor: float = 1.0,
+#     rotation: float = 0,
+#     occupied_areas: Optional[List] = None
+# ) -> Optional[Tuple[int, int, int, int]]:
+#     """Draw text with improved positioning and overlap prevention."""
+    
+#     if occupied_areas is None:
+#         occupied_areas = []
+    
+#     try:
+#         # Create font with stretch factor
+#         font = ImageFont.truetype(str(font_path), int(size * stretch_factor))
+        
+#         # Get text dimensions
+#         text_width, text_height = get_text_dimensions(text, font)
+        
+#         # Adjust dimensions for rotation
+#         if rotation != 0:
+#             text_width, text_height = get_rotated_bbox(text_width, text_height, rotation)
+        
+#         # Find non-overlapping position
+#         final_x, final_y = find_non_overlapping_position(
+#             text_width, text_height, 
+#             preferred_position[0], preferred_position[1],
+#             occupied_areas
+#         )
+        
+#         # Draw the text
+#         if rotation == 0:
+#             # Simple case - no rotation
+#             draw = ImageDraw.Draw(base_img)
+#             draw.text((final_x, final_y), text.upper(), font=font, fill=color)
+#         else:
+#             # Create temporary image for rotation
+#             temp_img = Image.new("RGBA", (text_width + 100, text_height + 100), (0, 0, 0, 0))
+#             temp_draw = ImageDraw.Draw(temp_img)
+            
+#             # Draw text in center of temp image
+#             temp_x = (temp_img.width - text_width) // 2
+#             temp_y = (temp_img.height - text_height) // 2
+#             temp_draw.text((temp_x, temp_y), text.upper(), font=font, fill=color)
+            
+#             # Rotate and paste
+#             rotated = temp_img.rotate(rotation, expand=True)
+            
+#             # Calculate paste position (center the rotated text on final position)
+#             paste_x = final_x - (rotated.width - text_width) // 2
+#             paste_y = final_y - (rotated.height - text_height) // 2
+            
+#             # Paste with alpha channel for proper blending
+#             if rotated.mode == 'RGBA':
+#                 base_img.paste(rotated, (paste_x, paste_y), rotated)
+#             else:
+#                 base_img.paste(rotated, (paste_x, paste_y))
+        
+#         # Return bounding box for tracking
+#         return (final_x, final_y, final_x + text_width, final_y + text_height)
+        
+#     except Exception as e:
+#         print(f"Error drawing text '{text}': {e}")
+#         return None
+
 def draw_event_text(
     base_img: Image.Image,
     text: str,
@@ -109,65 +178,68 @@ def draw_event_text(
     color: Tuple[int, int, int],
     stretch_factor: float = 1.0,
     rotation: float = 0,
-    occupied_areas: Optional[List] = None
+    occupied_areas: Optional[List] = None,
+    min_size: int = 20
 ) -> Optional[Tuple[int, int, int, int]]:
-    """Draw text with improved positioning and overlap prevention."""
-    
+    """Draw text with dynamic resizing to avoid overflow and overlaps."""
+
     if occupied_areas is None:
         occupied_areas = []
-    
-    try:
-        # Create font with stretch factor
-        font = ImageFont.truetype(str(font_path), int(size * stretch_factor))
-        
-        # Get text dimensions
-        text_width, text_height = get_text_dimensions(text, font)
-        
-        # Adjust dimensions for rotation
-        if rotation != 0:
-            text_width, text_height = get_rotated_bbox(text_width, text_height, rotation)
-        
-        # Find non-overlapping position
-        final_x, final_y = find_non_overlapping_position(
-            text_width, text_height, 
-            preferred_position[0], preferred_position[1],
-            occupied_areas
-        )
-        
-        # Draw the text
-        if rotation == 0:
-            # Simple case - no rotation
+
+    current_size = size
+
+    while current_size >= min_size:
+        try:
+            font = ImageFont.truetype(str(font_path), int(current_size * stretch_factor))
+
+            text_width, text_height = get_text_dimensions(text, font)
+            if rotation != 0:
+                text_width, text_height = get_rotated_bbox(text_width, text_height, rotation)
+
+            # Check if text fits inside canvas bounds
+            if (preferred_position[0] + text_width > base_img.width or
+                preferred_position[1] + text_height > base_img.height):
+                current_size -= 5
+                continue
+
+            # Check overlap with existing areas
+            overlaps = False
+            for (ox1, oy1, ox2, oy2) in occupied_areas:
+                if not (preferred_position[0] + text_width < ox1 or
+                        preferred_position[0] > ox2 or
+                        preferred_position[1] + text_height < oy1 or
+                        preferred_position[1] > oy2):
+                    overlaps = True
+                    break
+            if overlaps:
+                current_size -= 5
+                continue
+
+            # Passed checks, draw the text (you can reuse your existing drawing logic here)
             draw = ImageDraw.Draw(base_img)
-            draw.text((final_x, final_y), text.upper(), font=font, fill=color)
-        else:
-            # Create temporary image for rotation
-            temp_img = Image.new("RGBA", (text_width + 100, text_height + 100), (0, 0, 0, 0))
-            temp_draw = ImageDraw.Draw(temp_img)
-            
-            # Draw text in center of temp image
-            temp_x = (temp_img.width - text_width) // 2
-            temp_y = (temp_img.height - text_height) // 2
-            temp_draw.text((temp_x, temp_y), text.upper(), font=font, fill=color)
-            
-            # Rotate and paste
-            rotated = temp_img.rotate(rotation, expand=True)
-            
-            # Calculate paste position (center the rotated text on final position)
-            paste_x = final_x - (rotated.width - text_width) // 2
-            paste_y = final_y - (rotated.height - text_height) // 2
-            
-            # Paste with alpha channel for proper blending
-            if rotated.mode == 'RGBA':
-                base_img.paste(rotated, (paste_x, paste_y), rotated)
+            if rotation == 0:
+                draw.text(preferred_position, text.upper(), font=font, fill=color)
             else:
-                base_img.paste(rotated, (paste_x, paste_y))
-        
-        # Return bounding box for tracking
-        return (final_x, final_y, final_x + text_width, final_y + text_height)
-        
-    except Exception as e:
-        print(f"Error drawing text '{text}': {e}")
-        return None
+                # Same temp_img + rotate + paste logic as before
+                temp_img = Image.new("RGBA", (text_width + 100, text_height + 100), (0, 0, 0, 0))
+                temp_draw = ImageDraw.Draw(temp_img)
+                temp_x = (temp_img.width - text_width) // 2
+                temp_y = (temp_img.height - text_height) // 2
+                temp_draw.text((temp_x, temp_y), text.upper(), font=font, fill=color)
+                rotated = temp_img.rotate(rotation, expand=True)
+                paste_x = preferred_position[0] - (rotated.width - text_width) // 2
+                paste_y = preferred_position[1] - (rotated.height - text_height) // 2
+                base_img.paste(rotated, (paste_x, paste_y), rotated)
+
+            return (preferred_position[0], preferred_position[1],
+                    preferred_position[0] + text_width, preferred_position[1] + text_height)
+
+        except Exception as e:
+            print(f"Error drawing text '{text}' at size {current_size}: {e}")
+            current_size -= 5
+
+    print(f"Could not fit text '{text}' even at minimum size {min_size}")
+    return None
 
 def apply_layout(base_img, event_name, date, location, font_path, colors):
     """Apply layout with improved text placement."""
@@ -222,11 +294,6 @@ def generate_poster(text, output_path, font_path="data/fonts/Roboto-Regular.ttf"
     event_name = event_info.get("event_name", "Event Name")
     date = event_info.get("date", "Date")
     location = event_info.get("location", "Location")
-    
-    # For demo purposes:
-    # event_name = "SAMPLE EVENT"
-    # date = "DEC 15 2024"
-    # location = "VENUE NAME"
 
     # Create base image with background
     palette = [(255, 100, 100), (50, 50, 50), (255, 255, 100)]  # Sample palette
