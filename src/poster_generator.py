@@ -1,6 +1,6 @@
 from PIL import Image, ImageDraw
 import random
-from typography import draw_wrapped_text
+from typography import draw_text_line, get_accessible_text_color, FONT_DIR
 from shapes import draw_shape_by_name, draw_random_shape
 from event_extractor import extract_event_info
 
@@ -47,30 +47,51 @@ def design_params_from_event(text):
         "location": info["location"],
     }
 
-def generate_poster(text, output_path):
+def generate_poster(text, output_path, details=None):
     params = design_params_from_event(text)
     palette = params["palette"]
-    font_min, font_max = params["font_size_range"]
-    font_size = random.randint(font_min, font_max)
 
     bg_color = random.choice(palette)
     img = Image.new("RGB", (WIDTH, HEIGHT), color=bg_color)
     draw = ImageDraw.Draw(img)
+    
+	# Text colors for accessibility
+    text_color = get_accessible_text_color(bg_color)
 
-    if params["shape"]:
-        draw_shape_by_name(draw, params["shape"], palette, WIDTH, HEIGHT)
-    else:
-        draw_random_shape(draw, palette, WIDTH, HEIGHT)
+    # Font paths for weights - adjust if you have multiple font files downloaded
+    font_paths = {
+        "bold": FONT_DIR / "Roboto-Bold.ttf",
+        "medium": FONT_DIR / "Roboto-Medium.ttf",
+        "regular": FONT_DIR / "Roboto-Regular.ttf",
+        "light": FONT_DIR / "Roboto-Light.ttf",
+    }
 
-    # Combine event details into multiline string
-    lines = [params["event_name"]]
-    if params["date"]:
-        lines.append(params["date"])
-    if params["location"]:
-        lines.append(params["location"])
+    # Positions
+    EVENT_Y = int(HEIGHT * 0.2)
+    DATE_Y = EVENT_Y + 110
+    LOCATION_Y = int(HEIGHT * 0.8)
+    DETAILS_Y = HEIGHT - 60
+    CENTER_X = WIDTH // 2
+    LEFT_MARGIN = 60
 
-    poster_text = "\n".join([line for line in lines if line])
+    # Draw Event Name (largest)
+    event_name = params["event_name"] or ""
+    event_font_size = 70
+    draw_text_line(draw, event_name, (CENTER_X, EVENT_Y), font_paths["bold"], event_font_size, text_color, anchor="mm")
 
-    draw_wrapped_text(draw, poster_text, palette, WIDTH, HEIGHT, font_size=font_size)
+    # Draw Date/Time (medium)
+    date = params["date"] or ""
+    date_font_size = 32
+    draw_text_line(draw, date, (CENTER_X, DATE_Y), font_paths["medium"], date_font_size, text_color, anchor="mm")
+
+    # Draw Location (smaller)
+    location = params["location"] or ""
+    location_font_size = 24
+    draw_text_line(draw, location, (CENTER_X, LOCATION_Y), font_paths["regular"], location_font_size, text_color, anchor="mm")
+
+    # Draw Additional Details (smallest, if any)
+    if details:
+        details_font_size = 14
+        draw_text_line(draw, details, (LEFT_MARGIN, DETAILS_Y), font_paths["light"], details_font_size, text_color, anchor="lm")
 
     img.save(output_path)

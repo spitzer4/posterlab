@@ -14,36 +14,61 @@ if not API_KEY:
     raise ValueError("Google Fonts API key not found. Please set GOOGLE_FONTS_API_KEY in .env")
 
 FONT_FAMILY = "Roboto"
-FONT_VARIANT = "regular"
 FONT_DIR = Path("data/fonts")
-FONT_PATH = FONT_DIR / f"{FONT_FAMILY}-{FONT_VARIANT}.ttf"
+
+# Font paths for weights
+font_paths = {
+	"bold": FONT_DIR / "Roboto-Bold.ttf",
+	"medium": FONT_DIR / "Roboto-Medium.ttf",
+	"regular": FONT_DIR / "Roboto-Regular.ttf",
+	"light": FONT_DIR / "Roboto-Light.ttf",
+}
 
 def get_font_url(api_key, family, variant):
     url = f"https://www.googleapis.com/webfonts/v1/webfonts?key={api_key}"
     response = requests.get(url)
     response.raise_for_status()
     fonts = response.json().get("items", [])
-
     for font in fonts:
         if font["family"].lower() == family.lower():
             files = font.get("files", {})
-            if variant in files:
-                return files[variant]
-    raise ValueError(f"Font '{family}' with variant '{variant}' not found")
+            # Google Fonts uses variant keys like 'regular', 'italic', '700', etc.
+            # Map variants to keys:
+            variant_key_map = {
+                "regular": "regular",
+                "bold": "700",
+                "medium": "500",
+                "light": "300",
+            }
+            key = variant_key_map.get(variant)
+            if key and key in files:
+                return files[key]
+    raise ValueError(f"Font '{family}' variant '{variant}' not found in Google Fonts API.")
 
-def download_font():
+def download_all_fonts():
     if not FONT_DIR.exists():
         FONT_DIR.mkdir(parents=True)
-    if not FONT_PATH.is_file():
-        print(f"Downloading font '{FONT_FAMILY} {FONT_VARIANT}' from Google Fonts API...")
-        font_url = get_font_url(API_KEY, FONT_FAMILY, FONT_VARIANT)
-        r = requests.get(font_url)
-        r.raise_for_status()
-        with open(FONT_PATH, "wb") as f:
-            f.write(r.content)
-        print("Font downloaded successfully.")
-    else:
-        print("Font already downloaded.")
+    for variant, path in font_paths.items():
+        if not path.is_file():
+            print(f"Downloading {FONT_FAMILY} {variant} font...")
+            font_url = get_font_url(API_KEY, FONT_FAMILY, variant)
+            r = requests.get(font_url)
+            r.raise_for_status()
+            with open(path, "wb") as f:
+                f.write(r.content)
+            print(f"Downloaded {variant} font to {path}")
+        else:
+            print(f"{variant} font already downloaded.")
+            
+def get_font(variant="regular", size=40):
+    """
+    Returns a PIL ImageFont instance for given variant and size.
+    Downloads fonts if missing.
+    """
+    if variant not in font_paths:
+        variant = "regular"
+    download_all_fonts()  # Ensures fonts are downloaded (idempotent)
+    return ImageFont.truetype(str(font_paths[variant]), size)
 
 def relative_luminance(rgb):
     def channel_lum(c):
@@ -62,21 +87,19 @@ def contrast_ratio(c1, c2):
 def get_accessible_text_color(bg_color, candidates=[(0,0,0), (255,255,255)]):    
     # Try black or white text for sufficient contrast (4.5:1)
     for color in candidates:
-        if contrast_ratio(bg_color[0], color) >= 4.5:
+        if contrast_ratio(bg_color, color) >= 4.5:
             return color
     # If neither passes, return color with highest contrast anyway
     return max(candidates, key=lambda c: contrast_ratio(bg_color, c))
 
-def draw_wrapped_text(draw, text, bg_color, width, height, font_size=None, max_width_ratio=0.8, line_spacing=10):
+def draw_text(draw, text, bg_color, width, height, font_size=None, max_width_ratio=0.8, line_spacing=10, variant="regular"):
     """
     Draw wrapped multiline text with accessible contrast color.
     """
-    download_font()
-
     if font_size is None:
         font_size = random.randint(80, 200)
 
-    font = ImageFont.truetype(str(FONT_PATH), font_size)
+    font = get_font(variant, font_size)
     max_text_width = width * max_width_ratio
 
     # Estimate max chars per line by average char width
@@ -100,4 +123,8 @@ def draw_wrapped_text(draw, text, bg_color, width, height, font_size=None, max_w
         x = (width - text_width) // 2  # center horizontally
         draw.text((x, y), line, font=font, fill=text_color)
         y += line_height + line_spacing
+
+def draw_text_line(draw, text, position, font_path, font_size, fill, anchor="lt"):
+    font = ImageFont.truetype(str(font_path), font_size)
+    draw.text(position, text, font=font, fill=fill, anchor=anchor)
         
