@@ -1,97 +1,82 @@
 from PIL import Image, ImageDraw
 import random
 from typography import draw_text_line, get_accessible_text_color, FONT_DIR
-from shapes import draw_shape_by_name, draw_random_shape
 from event_extractor import extract_event_info
+from palettes import get_random_palette
 
 WIDTH, HEIGHT = 1080, 1350
 
-WARM_PALETTE = [(239, 71, 111), (255, 209, 102), (255, 255, 255)]
-COOL_PALETTE = [(20, 33, 61), (0, 48, 73), (200, 200, 200)]
-NEUTRAL_PALETTE = [(200, 200, 200), (100, 100, 100), (150, 150, 150)]
+def draw_event_text(base_img, text, position, font_path, size, color, stretch_factor=1.0, rotation=0):
+    from PIL import ImageDraw, ImageFont
 
-LOCATION_SHAPES = {
-    "park": "leaf",
-    "beach": "circle",
-    "hall": "rectangle",
-    "stadium": "circle",
-}
+    font = ImageFont.truetype(str(font_path), int(size * stretch_factor))
 
-def design_params_from_event(text):
-    info = extract_event_info(text)
+    # Create transparent image for rotated text
+    temp_img = Image.new("RGB", base_img.size, (0, 0, 0))
+    temp_draw = ImageDraw.Draw(temp_img)
+    temp_draw.text(position, text.upper(), font=font, fill=color)
 
-    palette = WARM_PALETTE if info["date"] else NEUTRAL_PALETTE
+    # Rotate text layer
+    rotated = temp_img.rotate(rotation, expand=1)
 
-    name_len = len(info["event_name"])
-    if name_len < 10:
-        font_size_range = (150, 200)
-    elif name_len < 30:
-        font_size_range = (80, 140)
-    else:
-        font_size_range = (40, 80)
 
-    shape = None
-    if info["location"]:
-        loc = info["location"].lower()
-        for key in LOCATION_SHAPES:
-            if key in loc:
-                shape = LOCATION_SHAPES[key]
-                break
+def apply_layout(base_img, event_name, date, location, font_path, colors):
+    bg_color, text_color, accent_color = colors
 
-    return {
-        "palette": palette,
-        "font_size_range": font_size_range,
-        "shape": shape,
-        "event_name": info["event_name"],
-        "date": info["date"],
-        "location": info["location"],
-    }
+    # Main event name - oversized, possibly rotated
+    main_rotation = random.choice([0, 0, 90, -90, 15, -15])
+    main_stretch = random.uniform(0.8, 1.8)
+    main_pos = (random.randint(50, 300), random.randint(50, 300))
+    draw_event_text(base_img, event_name, main_pos, font_path, size=220,
+                    color=text_color, stretch_factor=main_stretch, rotation=main_rotation)
 
-def generate_poster(text, output_path, details=None):
-    params = design_params_from_event(text)
-    palette = params["palette"]
+    # Date - small but high contrast accent
+    date_pos = (random.randint(50, 400), random.randint(600, 1000))
+    draw_event_text(base_img, date, date_pos, font_path, size=100,
+                    color=accent_color, stretch_factor=1.0, rotation=random.choice([0, 90, -90]))
 
-    bg_color = random.choice(palette)
-    img = Image.new("RGB", (WIDTH, HEIGHT), color=bg_color)
-    draw = ImageDraw.Draw(img)
-    
-	# Text colors for accessibility
+    # Location - maybe rotated opposite to main
+    loc_pos = (random.randint(50, 500), random.randint(1000, 1300))
+    draw_event_text(base_img, location, loc_pos, font_path, size=120,
+                    color=text_color, stretch_factor=random.uniform(0.9, 1.5), rotation=random.choice([0, 90, -90, 180]))
+
+def generate_poster(text, output_path, font_path=FONT_DIR / "Roboto-Bold.ttf"):
+    # Extract event info
+    event_info = extract_event_info(text)
+    event_name = event_info.get("event_name", "Untitled Event")
+    date = event_info.get("date", "Date TBD")	
+    location = event_info.get("location", "Location TBD")
+
+    # Get color palette and accessible text colors
+    palette = get_random_palette()
+    bg_color = palette[0]  # Use first as background
     text_color = get_accessible_text_color(bg_color)
+    accent_color = palette[2] if len(palette) > 2 else text_color
 
-    # Font paths for weights - adjust if you have multiple font files downloaded
-    font_paths = {
-        "bold": FONT_DIR / "Roboto-Bold.ttf",
-        "medium": FONT_DIR / "Roboto-Medium.ttf",
-        "regular": FONT_DIR / "Roboto-Regular.ttf",
-        "light": FONT_DIR / "Roboto-Light.ttf",
-    }
+    # Create base image and draw object
+    img = Image.new("RGB", (WIDTH, HEIGHT), color=bg_color)
+    
+    apply_layout(img, event_name, date, location, font_path, (bg_color, text_color, accent_color))
 
-    # Positions
+    # Optionally add more structured text (if you want your previous draw_text_line calls)
+    # For that you need an ImageDraw object:
+    draw = ImageDraw.Draw(img)
+
+    # Positions for structured text
+    CENTER_X = WIDTH // 2
     EVENT_Y = int(HEIGHT * 0.2)
     DATE_Y = EVENT_Y + 110
     LOCATION_Y = int(HEIGHT * 0.8)
-    DETAILS_Y = HEIGHT - 60
-    CENTER_X = WIDTH // 2
-    LEFT_MARGIN = 60
 
-    # Draw Event Name (largest)
-    event_name = params["event_name"] or ""
+    # Font sizes
     event_font_size = 70
-    draw_text_line(draw, event_name, (CENTER_X, EVENT_Y), font_paths["bold"], event_font_size, text_color, anchor="mm")
-
-    # Draw Date/Time (medium)
-    date = params["date"] or ""
     date_font_size = 32
-    draw_text_line(draw, date, (CENTER_X, DATE_Y), font_paths["medium"], date_font_size, text_color, anchor="mm")
-
-    # Draw Location (smaller)
-    location = params["location"] or ""
     location_font_size = 24
-    draw_text_line(draw, location, (CENTER_X, LOCATION_Y), font_paths["regular"], location_font_size, text_color, anchor="mm")
 
-    # Draw Additional Details (smallest, if any)
-    if details:
-        details_font_size = 14
-        draw_text_line(draw, details, (LEFT_MARGIN, DETAILS_Y), font_paths["light"], details_font_size, text_color, anchor="lm")
+    # Draw clean lines of text centered (optional, can comment out if you want only generative layout)
+    draw_text_line(draw, event_name, (CENTER_X, EVENT_Y), font_path, event_font_size, text_color, anchor="mm")
+    draw_text_line(draw, date, (CENTER_X, DATE_Y), font_path, date_font_size, text_color, anchor="mm")
+    draw_text_line(draw, location, (CENTER_X, LOCATION_Y), font_path, location_font_size, text_color, anchor="mm")
 
+    # Save final poster
     img.save(output_path)
